@@ -16,13 +16,27 @@ A native desktop to-do application using SDL2 and Dear ImGui, featuring full CRU
 ```
 
 - Options:
-  - -DBUILD_GUI=ON (default) to build with SDL2 + Dear ImGui UI
-  - -DWITH_TESTS=OFF (default)
+  - Environment variables:
+    - BUILD_GUI=ON|OFF (default OFF in CI script to avoid heavy fetches)
+    - WITH_TESTS=ON|OFF (default OFF)
+    - APP_OFFLINE=ON|OFF (default ON to avoid network; set OFF to allow FetchContent)
+    - CMAKE_BUILD_TYPE=Debug|Release (default Debug)
 
-To customize:
+Examples:
+- Headless, offline (fast, default):
+```bash
+BUILD_GUI=OFF APP_OFFLINE=ON ./build.sh
+```
+
+- GUI build with network fetch allowed:
+```bash
+BUILD_GUI=ON APP_OFFLINE=OFF ./build.sh
+```
+
+To customize using raw CMake:
 ```bash
 mkdir -p build && cd build
-cmake -S .. -B . -DCMAKE_BUILD_TYPE=Debug -DBUILD_GUI=ON -DWITH_TESTS=OFF
+cmake -S .. -B . -DCMAKE_BUILD_TYPE=Debug -DBUILD_GUI=ON -DWITH_TESTS=OFF -DAPP_OFFLINE=OFF
 cmake --build . -- -j"$(nproc)"
 ```
 

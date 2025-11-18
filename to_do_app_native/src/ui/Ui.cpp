@@ -2,6 +2,43 @@
 #include "imgui.h"
 #include <algorithm>
 
+// Helper: minimal wrappers to let ImGui edit std::string safely using internal buffers.
+// These mirror the pattern from ImGui's FAQ (string input helpers).
+static bool InputTextString(const char* label, std::string& str, ImGuiInputTextFlags flags = 0)
+{
+    // Allocate a buffer sized to current string + growth
+    std::vector<char> buf(str.begin(), str.end());
+    buf.push_back('\0');
+    // Reserve some extra to reduce reallocs on small growth
+    buf.reserve(std::max<size_t>(64, buf.size() + 64));
+    bool changed = ImGui::InputText(label, buf.data(), buf.capacity(), flags);
+    if (changed)
+        str = std::string(buf.data());
+    return changed;
+}
+
+static bool InputTextMultilineString(const char* label, std::string& str, const ImVec2& size = ImVec2(0,0), ImGuiInputTextFlags flags = 0)
+{
+    std::vector<char> buf(str.begin(), str.end());
+    buf.push_back('\0');
+    buf.reserve(std::max<size_t>(256, buf.size() + 128));
+    bool changed = ImGui::InputTextMultiline(label, buf.data(), buf.capacity(), size, flags);
+    if (changed)
+        str = std::string(buf.data());
+    return changed;
+}
+
+static bool InputTextWithHintString(const char* label, const char* hint, std::string& str, ImGuiInputTextFlags flags = 0)
+{
+    std::vector<char> buf(str.begin(), str.end());
+    buf.push_back('\0');
+    buf.reserve(std::max<size_t>(64, buf.size() + 64));
+    bool changed = ImGui::InputTextWithHint(label, hint, buf.data(), buf.capacity(), flags);
+    if (changed)
+        str = std::string(buf.data());
+    return changed;
+}
+
 Ui::Ui(TaskList& model) : _model(model) {}
 
 #ifdef APP_WITH_GUI
@@ -15,12 +52,11 @@ void Ui::onEvent(const SDL_Event& e) {
             if (_onSave) _onSave();
         }
         if (ctrl && (key == SDLK_f)) {
-            // Focus search box next frame
-            ImGui::SetNextItemFocus();
+            // No direct SetNextItemFocus in ImGui core; focusing will be handled in draw()
+            // by putting the search widget early and optionally using keyboard navigation.
         }
         if (key == SDLK_RETURN && ImGui::GetIO().WantTextInput) {
-            // Enter while typing in title adds task if in new title field
-            // (Handled in draw by ImGui::IsItemDeactivatedAfterEdit on title box)
+            // Enter while typing in title can be handled by InputText's EnterReturnsTrue flag.
         }
         if (key == SDLK_DELETE) {
             if (_editingId.has_value()) {
@@ -57,7 +93,7 @@ void Ui::draw() {
 void Ui::drawHeader() {
     ImGui::TextColored(ImVec4(0.145f, 0.388f, 0.922f, 1.0f), "Add Task");
     ImGui::PushItemWidth(-1);
-    if (ImGui::InputText("##newTitle", &_newTitle, ImGuiInputTextFlags_EnterReturnsTrue)) {
+    if (InputTextString("##newTitle", _newTitle, ImGuiInputTextFlags_EnterReturnsTrue)) {
         if (!_newTitle.empty()) {
             Task t;
             t.title = _newTitle;
@@ -78,8 +114,8 @@ void Ui::drawHeader() {
             _newTitle.clear(); _newDesc.clear(); _newDue.clear();
         }
     }
-    ImGui::InputTextMultiline("##newDesc", &_newDesc, ImVec2(-1, 80));
-    ImGui::InputTextWithHint("##newDue", "Due date (optional)", &_newDue);
+    InputTextMultilineString("##newDesc", _newDesc, ImVec2(-1, 80));
+    InputTextWithHintString("##newDue", "Due date (optional)", _newDue);
     ImGui::PopItemWidth();
 }
 
@@ -94,7 +130,7 @@ void Ui::drawFilters() {
     ImGui::TextUnformatted("|");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(240);
-    ImGui::InputTextWithHint("##search", "Search title (Ctrl+F)", &_search);
+    InputTextWithHintString("##search", "Search title (Ctrl+F)", _search);
 }
 
 void Ui::startEdit(const Task& t) {
@@ -135,16 +171,16 @@ void Ui::drawTaskList() {
 
         if (_editingId.has_value() && _editingId.value() == t.id) {
             ImGui::PushItemWidth(320);
-            ImGui::InputText("##editTitle", &_editTitle);
+            InputTextString("##editTitle", _editTitle);
             ImGui::PopItemWidth();
             ImGui::SameLine();
             ImGui::SetNextItemWidth(220);
-            ImGui::InputTextWithHint("##editDue", "Due", &_editDue);
+            InputTextWithHintString("##editDue", "Due", _editDue);
             ImGui::SameLine();
             if (ImGui::Button("Save")) { commitEdit(); }
             ImGui::SameLine();
             if (ImGui::Button("Cancel")) { cancelEdit(); }
-            ImGui::InputTextMultiline("##editDesc", &_editDesc, ImVec2(-1, 80));
+            InputTextMultilineString("##editDesc", _editDesc, ImVec2(-1, 80));
         } else {
             ImGui::TextWrapped("%s", t.title.c_str());
             if (!t.dueDate.empty()) {
