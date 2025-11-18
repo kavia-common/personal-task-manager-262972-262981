@@ -6,7 +6,7 @@ A native desktop to-do application using SDL2 and Dear ImGui, featuring full CRU
 
 - CMake 3.16+
 - C++17 compiler (g++/clang++)
-- Internet access for CMake FetchContent (to fetch SDL2, Dear ImGui, and nlohmann/json)
+- Internet access for CMake FetchContent (to fetch SDL2, Dear ImGui, and nlohmann/json) unless APP_OFFLINE=ON
 - (Optional) Catch2 single-header at /usr/local/include/catch2/catch.hpp
 
 ## Build

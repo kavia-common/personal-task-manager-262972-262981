@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Ensure robust, non-interactive build. Supports offline/headless builds.
+# Note: Defaults favor CI/offline builds; override via env vars below.
 set -euo pipefail
 
 # Workspace root (resolve to script directory to avoid hardcoded path issues)

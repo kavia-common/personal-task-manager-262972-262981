@@ -20,11 +20,8 @@ set(JSON_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann")
 set(JSON_VENDOR_HEADER "${JSON_VENDOR_DIR}/json.hpp")
 
 set(HAVE_NLOHMANN_JSON FALSE)
-if (EXISTS "/usr/include/nlohmann/json.hpp")
-  # System style directory contains nlohmann/json.hpp, but our code includes "json.hpp".
-  # Add directory so that "json.hpp" resolves to /usr/include/nlohmann/json.hpp via -I/usr/include/nlohmann
-  target_include_directories  # placeholder to keep syntax aligned
-endif()
+# Record include hints; we will apply them after target creation.
+# Prefer system or vendor header when available.
 
 # We will defer include dirs until target exists; record include hints:
 set(_json_include_hints "")
