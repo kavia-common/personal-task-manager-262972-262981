@@ -4,10 +4,7 @@
 Application::Application() = default;
 Application::~Application() = default;
 
-bool Application::initialize() {
-    _storage = std::make_unique<Storage>();
-    _ui = std::make_unique<Ui>(_tasks);
-
+void Application::wireUi() {
     // Connect UI signals/actions to model changes and persistence
     _ui->setOnCreateTask([this](const Task& t) {
         try {
@@ -50,6 +47,45 @@ bool Application::initialize() {
         save();
     });
 
+    _ui->setOnClearCompleted([this]() {
+        // iterate copy to avoid invalidation
+        auto completed = _tasks.getTasks(TaskList::Filter::Completed, "");
+        bool changed = false;
+        for (const auto& t : completed) {
+            if (_tasks.deleteTask(t.id)) changed = true;
+        }
+        if (changed) { markDirty(); save(); }
+    });
+
+    _ui->setOnImport([this](const std::string& path, std::string& toast) {
+        TaskList imported;
+        std::string err;
+        if (_storage->importFromFile(path, imported, err)) {
+            _tasks = std::move(imported);
+            markDirty();
+            save();
+            toast = "Import successful";
+            return true;
+        }
+        toast = std::string("Import failed: ") + err;
+        return false;
+    });
+
+    _ui->setOnExport([this](const std::string& path, std::string& toast) {
+        std::string err;
+        if (_storage->exportToFile(path, _tasks, err)) {
+            toast = "Exported";
+            return true;
+        }
+        toast = std::string("Export failed: ") + err;
+        return false;
+    });
+}
+
+bool Application::initialize() {
+    _storage = std::make_unique<Storage>();
+    _ui = std::make_unique<Ui>(_tasks);
+    wireUi();
     return true;
 }
 

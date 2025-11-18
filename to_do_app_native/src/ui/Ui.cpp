@@ -49,21 +49,12 @@ void Ui::onEvent(const SDL_Event& e) {
         const SDL_Keymod mod = (SDL_Keymod)SDL_GetModState();
         const bool ctrl = (mod & KMOD_CTRL) != 0;
         if (ctrl && (key == SDLK_s)) {
-            if (_onSave) _onSave();
+            if (_onSave) { _onSave(); _showSavedToast = true; _savedToastTimer = 1.0f; }
         }
         if (ctrl && (key == SDLK_f)) {
-            // No direct SetNextItemFocus in ImGui core; focusing will be handled in draw()
-            // by putting the search widget early and optionally using keyboard navigation.
+            _focusSearch = true;
         }
-        if (key == SDLK_RETURN && ImGui::GetIO().WantTextInput) {
-            // Enter while typing in title can be handled by InputText's EnterReturnsTrue flag.
-        }
-        if (key == SDLK_DELETE) {
-            if (_editingId.has_value()) {
-                if (_onDelete) _onDelete(_editingId.value());
-                _editingId.reset();
-            }
-        }
+        // Enter handled by InputText with EnterReturnsTrue in drawHeader()
     }
 }
 #endif
@@ -77,8 +68,10 @@ void Ui::setOnSave(std::function<void()> fn){ _onSave = std::move(fn); }
 
 void Ui::draw() {
     ImGui::SetNextWindowSize(ImVec2(960, 600), ImGuiCond_FirstUseEver);
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
     if (ImGui::Begin("To-Do", nullptr, flags)) {
+        drawMenuBar();
+        ImGui::Separator();
         drawHeader();
         ImGui::Separator();
         drawFilters();
@@ -86,8 +79,46 @@ void Ui::draw() {
         drawTaskList();
         ImGui::Separator();
         drawFooter();
+        drawModals();
+        drawPathDialog();
+
+        // Saved toast indicator
+        if (_showSavedToast) {
+            ImGui::SetNextWindowBgAlpha(0.85f);
+            ImGui::Begin("##toast", nullptr,
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize |
+                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoInputs);
+            ImGui::TextColored(ImVec4(0.145f, 0.388f, 0.922f, 1.0f), "Saved");
+            ImGui::End();
+            _savedToastTimer -= ImGui::GetIO().DeltaTime;
+            if (_savedToastTimer <= 0.0f) _showSavedToast = false;
+        }
     }
     ImGui::End();
+}
+
+void Ui::drawMenuBar() {
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("Import...")) {
+                _isExport = false;
+                _pathDialog.clear();
+                ImGui::OpenPopup("PathDialog");
+            }
+            if (ImGui::MenuItem("Export...")) {
+                _isExport = true;
+                _pathDialog.clear();
+                ImGui::OpenPopup("PathDialog");
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Save", "Ctrl+S")) {
+                if (_onSave) { _onSave(); _showSavedToast = true; _savedToastTimer = 1.0f; }
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
 }
 
 void Ui::drawHeader() {
@@ -130,6 +161,7 @@ void Ui::drawFilters() {
     ImGui::TextUnformatted("|");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(240);
+    if (_focusSearch) { ImGui::SetKeyboardFocusHere(); _focusSearch = false; }
     InputTextWithHintString("##search", "Search title (Ctrl+F)", _search);
 }
 
@@ -193,7 +225,11 @@ void Ui::drawTaskList() {
             ImGui::SameLine();
             if (ImGui::SmallButton("Edit")) { startEdit(t); }
             ImGui::SameLine();
-            if (ImGui::SmallButton("Delete")) { if (_onDelete) _onDelete(t.id); }
+            if (ImGui::SmallButton("Delete")) { 
+                _showConfirmDelete = true; 
+                _pendingDeleteId = t.id; 
+                ImGui::OpenPopup("ConfirmDelete"); 
+            }
             ImGui::SameLine();
             if (ImGui::SmallButton("Up")) { if (_onMove) _onMove(t.id, -1); }
             ImGui::SameLine();
@@ -213,12 +249,72 @@ void Ui::drawFooter() {
     ImGui::Text("Total: %zu | Active: %zu | Completed: %zu", allCount, activeCount, completedCount);
     ImGui::SameLine();
     if (ImGui::Button("Clear Completed")) {
-        for (const auto& t : _model.getTasks(TaskList::Filter::Completed, "")) {
-            if (_onDelete) _onDelete(t.id);
-        }
+        _showConfirmClearCompleted = true;
+        ImGui::OpenPopup("ConfirmClearCompleted");
     }
     ImGui::SameLine();
     if (ImGui::Button("Save (Ctrl+S)")) {
-        if (_onSave) _onSave();
+        if (_onSave) { _onSave(); _showSavedToast = true; _savedToastTimer = 1.0f; }
+    }
+}
+
+void Ui::drawModals() {
+    if (ImGui::BeginPopupModal("ConfirmDelete", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Delete task? This cannot be undone.");
+        if (ImGui::Button("Delete")) {
+            if (_onDelete) _onDelete(_pendingDeleteId);
+            _pendingDeleteId = 0;
+            _showConfirmDelete = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            _pendingDeleteId = 0;
+            _showConfirmDelete = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (ImGui::BeginPopupModal("ConfirmClearCompleted", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Remove all completed tasks? This cannot be undone.");
+        if (ImGui::Button("Clear")) {
+            if (_onClearCompleted) _onClearCompleted();
+            _showConfirmClearCompleted = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            _showConfirmClearCompleted = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
+void Ui::drawPathDialog() {
+    if (ImGui::BeginPopupModal("PathDialog", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text(_isExport ? "Export to path" : "Import from path");
+        ImGui::SetNextItemWidth(360);
+        InputTextWithHintString("##path", _isExport ? "Enter export path..." : "Enter import path...", _pathDialog);
+        if (ImGui::Button(_isExport ? "Export" : "Import")) {
+            std::string toast;
+            bool ok = false;
+            if (_isExport && _onExport) ok = _onExport(_pathDialog, toast);
+            if (!_isExport && _onImport) ok = _onImport(_pathDialog, toast);
+            // Simple feedback via a temporary tooltip-like window
+            ImGui::CloseCurrentPopup();
+            if (!toast.empty()) {
+                // Show a transient status in title bar area
+                _showSavedToast = true;
+                _savedToastTimer = 1.2f;
+            }
+            (void)ok;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 }

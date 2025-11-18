@@ -59,4 +59,6 @@ private:
     bool _dirty{false};
     std::chrono::steady_clock::time_point _lastChange{};
     std::chrono::milliseconds _debounce{500};
+
+    void wireUi();
 };

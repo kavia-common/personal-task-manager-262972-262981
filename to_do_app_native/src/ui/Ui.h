@@ -45,6 +45,15 @@ public:
     // PUBLIC_INTERFACE
     void setOnSave(std::function<void()> fn);
 
+    // PUBLIC_INTERFACE
+    void setOnClearCompleted(std::function<void()> fn) { _onClearCompleted = std::move(fn); }
+
+    // PUBLIC_INTERFACE
+    void setOnImport(std::function<bool(const std::string&, std::string&)> fn) { _onImport = std::move(fn); }
+
+    // PUBLIC_INTERFACE
+    void setOnExport(std::function<bool(const std::string&, std::string&)> fn) { _onExport = std::move(fn); }
+
 private:
     TaskList& _model;
 
@@ -69,12 +78,28 @@ private:
     std::function<void(uint64_t)> _onDelete;
     std::function<void(uint64_t,int)> _onMove;
     std::function<void()> _onSave;
+    std::function<void()> _onClearCompleted;
+    std::function<bool(const std::string&, std::string&)> _onImport;
+    std::function<bool(const std::string&, std::string&)> _onExport;
+
+    // UI State
+    bool _showConfirmDelete{false};
+    uint64_t _pendingDeleteId{0};
+    bool _showConfirmClearCompleted{false};
+    bool _focusSearch{false};
+    bool _showSavedToast{false};
+    float _savedToastTimer{0.0f};
+    std::string _pathDialog;
+    bool _isExport{true};
 
     // helpers
+    void drawMenuBar();
     void drawHeader();
     void drawFilters();
     void drawTaskList();
     void drawFooter();
+    void drawModals();
+    void drawPathDialog();
 
     void startEdit(const Task& t);
     void commitEdit();

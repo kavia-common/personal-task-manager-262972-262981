@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 #include <chrono>
+#include <fstream>
+#include <sstream>
 
 #ifdef APP_WITH_GUI
 #include <SDL.h>
@@ -8,6 +10,7 @@
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl2.h"
+#include "persistence/Json.h"
 #endif
 
 #include "app/Application.h"
@@ -51,6 +54,29 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+    // Prepare window geometry from settings.json
+    int winW = 960, winH = 600;
+    int winX = SDL_WINDOWPOS_CENTERED, winY = SDL_WINDOWPOS_CENTERED;
+    bool themeDark = false;
+    // Read settings.json if present (same directory as tasks.json)
+    // We create a temp Storage to resolve path without loading tasks.
+    Storage tempStorage;
+    std::string settingsPath = tempStorage.settingsFile();
+    {
+        std::ifstream sifs(settingsPath);
+        if (sifs.is_open()) {
+            try {
+                nlohmann::json sj;
+                sifs >> sj;
+                if (sj.contains("windowW")) winW = sj.value("windowW", winW);
+                if (sj.contains("windowH")) winH = sj.value("windowH", winH);
+                if (sj.contains("themeDark")) themeDark = sj.value("themeDark", themeDark);
+            } catch (...) {
+                // ignore malformed settings
+            }
+        }
+    }
+
     // GL context attributes (OpenGL 2 for portability)
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
@@ -60,7 +86,7 @@ int main(int argc, char** argv) {
 #endif
 
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-    SDL_Window* window = SDL_CreateWindow("To-Do App", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 960, 600, window_flags);
+    SDL_Window* window = SDL_CreateWindow("To-Do App", winX, winY, winW, winH, window_flags);
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
     SDL_GL_MakeCurrent(window, gl_context);
     SDL_GL_SetSwapInterval(1); // Enable vsync
@@ -71,7 +97,7 @@ int main(int argc, char** argv) {
     ImGuiIO& io = ImGui::GetIO(); (void)io;
 
     // Style
-    ImGui::StyleColorsLight();
+    if (themeDark) ImGui::StyleColorsDark(); else ImGui::StyleColorsLight();
 
     // Ocean Professional theme tweaks
     ImGuiStyle& style = ImGui::GetStyle();
@@ -91,7 +117,7 @@ int main(int argc, char** argv) {
     style.Colors[ImGuiCol_Header]       = ImVec4(0.960f, 0.619f, 0.043f, 0.65f);
     style.Colors[ImGuiCol_HeaderHovered]= ImVec4(0.960f, 0.619f, 0.043f, 0.85f);
     style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.960f, 0.619f, 0.043f, 1.0f);
-    style.Colors[ImGuiCol_WindowBg]     = ImVec4(0.976f, 0.980f, 0.984f, 1.0f); // #f9fafb
+    style.Colors[ImGuiCol_WindowBg]     = themeDark ? ImVec4(0.10f, 0.11f, 0.12f, 1.0f) : ImVec4(0.976f, 0.980f, 0.984f, 1.0f);
 
     // Setup Platform/Renderer backends
     ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
@@ -133,6 +159,30 @@ int main(int argc, char** argv) {
     }
 
     app.save();
+
+    // Persist window geometry and theme to settings.json
+    int x, y, w, h;
+    SDL_GetWindowPosition(window, &x, &y);
+    SDL_GetWindowSize(window, &w, &h);
+    nlohmann::json sj;
+    sj["windowX"] = x;
+    sj["windowY"] = y;
+    sj["windowW"] = w;
+    sj["windowH"] = h;
+    sj["themeDark"] = themeDark;
+    // write using Storage atomicWrite via a small helper
+    {
+        std::ofstream ofs(settingsPath + ".tmp", std::ios::binary | std::ios::trunc);
+        if (ofs.is_open()) {
+            ofs << sj.dump(2);
+            ofs.flush();
+        }
+#if defined(_WIN32)
+        MoveFileExA(std::string(settingsPath + ".tmp").c_str(), settingsPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+#else
+        std::rename(std::string(settingsPath + ".tmp").c_str(), settingsPath.c_str());
+#endif
+    }
 
     ImGui_ImplOpenGL2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
